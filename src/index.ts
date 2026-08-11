@@ -1122,6 +1122,42 @@ joplin.plugins.register({
 			},
 		});
 
+		await joplin.commands.register({
+			name: 'fullNotebookView.revealFolder',
+			label: 'Reveal Folder in Full Notebook View',
+			iconName: 'fas fa-folder-tree',
+			execute: async (folderId: string) => {
+				try {
+					const isVisible = await joplin.views.panels.visible(panel);
+					if (!isVisible) {
+						await joplin.views.panels.show(panel, true);
+					}
+					joplin.views.panels.postMessage(panel, {
+						type: 'revealFolder',
+						folderId: folderId,
+					});
+				} catch (e) {}
+			},
+		});
+
+		await joplin.commands.register({
+			name: 'fullNotebookView.revealNote',
+			label: 'Reveal Note in Full Notebook View',
+			iconName: 'fas fa-folder-tree',
+			execute: async (noteId: string) => {
+				try {
+					const isVisible = await joplin.views.panels.visible(panel);
+					if (!isVisible) {
+						await joplin.views.panels.show(panel, true);
+					}
+					joplin.views.panels.postMessage(panel, {
+						type: 'revealNote',
+						noteId: noteId,
+					});
+				} catch (e) {}
+			},
+		});
+
 		await joplin.views.toolbarButtons.create(
 			'fullNotebookView.togglePanelBtn',
 			'fullNotebookView.togglePanel',

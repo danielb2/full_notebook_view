@@ -1736,6 +1736,25 @@ webviewApi.onMessage(function (message) {
 			}
 			break;
 
+		case 'revealFolder':
+			if (message.folderId) {
+				if (state.activeTab !== 'notebooks') {
+					switchTab('notebooks');
+				}
+				expandToFolder(message.folderId);
+			}
+			break;
+
+		case 'revealNote':
+			if (message.noteId) {
+				state.shouldExpandOnNextSelect = false;
+				if (state.activeTab !== 'notebooks') {
+					switchTab('notebooks');
+				}
+				expandToNote(message.noteId, true);
+			}
+			break;
+
 		case 'tocUpdated':
 			state.tocHeadings = message.headings || [];
 			state.tocNoteTitle = message.noteTitle || '';
