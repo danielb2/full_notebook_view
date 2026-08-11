@@ -376,6 +376,9 @@ joplin.plugins.register({
 		await joplin.views.panels.setHtml(panel, `
 			<div id="fnv-root">
 				<div id="fnv-tabs">
+					<button class="fnv-tab" data-tab="search">
+						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.5 4.5 0 1 0-8.999.001A4.5 4.5 0 0 0 11.5 7Z"/></svg>
+					</button>
 					<button class="fnv-tab fnv-tab-active" data-tab="notebooks">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75z"/></svg>
 						<span>Notebooks</span>
@@ -388,8 +391,8 @@ joplin.plugins.register({
 				<div id="fnv-views">
 					<div id="fnv-view-notebooks" class="fnv-view fnv-view-active">
 						<div id="fnv-toolbar">
-							<button id="fnv-new-note" title="New Note">
-								<svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M8 1a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2H9v5a1 1 0 1 1-2 0V9H2a1 1 0 0 1 0-2h5V2a1 1 0 0 1 1-1z"/></svg>
+							<button id="fnv-collapse-others" title="Collapse Other Folders">
+								<svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M8 9.5L3 4.5h10L8 9.5z"/></svg>
 							</button>
 							<div id="fnv-search-wrap">
 								<input type="text" id="fnv-search" placeholder="Search notes..." />
@@ -421,6 +424,39 @@ joplin.plugins.register({
 							</div>
 						</div>
 						<div id="fnv-tree"></div>
+					</div>
+					<div id="fnv-view-search" class="fnv-view">
+						<div id="fnv-search-toolbar">
+							<div id="fnv-search-page-wrap">
+								<input type="text" id="fnv-search-page-input" placeholder="Search notes..." />
+							</div>
+							<select id="fnv-search-sort">
+								<option value="title-asc">Name ↑</option>
+								<option value="title-desc">Name ↓</option>
+								<option value="date-desc">Date ↓</option>
+								<option value="date-asc">Date ↑</option>
+							</select>
+							<button id="fnv-search-filter-toggle" title="Filters">
+								<svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M1 2a1 1 0 0 1 1-1h12a1 1 0 0 1 .8 1.6L10 9.267V13a1 1 0 0 1-.553.894l-2 1A1 1 0 0 1 6 14V9.267L1.2 2.6A1 1 0 0 1 1 2z"/></svg>
+							</button>
+						</div>
+						<div id="fnv-search-filter-panel" class="fnv-filter-hidden">
+							<div class="fnv-filter-row">
+								<label class="fnv-filter-label"><input type="checkbox" id="fnv-search-filter-notes" checked /> Notes</label>
+								<label class="fnv-filter-label"><input type="checkbox" id="fnv-search-filter-notebooks" checked /> Notebooks</label>
+							</div>
+							<div class="fnv-filter-row">
+								<label class="fnv-filter-label fnv-filter-date-label">After <input type="date" id="fnv-search-filter-date-after" /></label>
+								<label class="fnv-filter-label fnv-filter-date-label">Before <input type="date" id="fnv-search-filter-date-before" /></label>
+							</div>
+							<div class="fnv-filter-row">
+								<span class="fnv-filter-exclusion-link" id="fnv-search-manage-exclusions">Manage exclusions...</span>
+							</div>
+							<div id="fnv-search-exclusion-panel" class="fnv-filter-hidden">
+								<div id="fnv-search-exclusion-list"></div>
+							</div>
+						</div>
+						<div id="fnv-search-results"></div>
 					</div>
 					<div id="fnv-view-toc" class="fnv-view">
 						<div id="fnv-toc"></div>
@@ -472,6 +508,30 @@ joplin.plugins.register({
 			} catch (e) {
 				return { folderIds: [], noteIds: [] };
 			}
+		}
+
+		function getAllDescendantFolderIds(folderId: string, folders: FolderItem[]): string[] {
+			const result = [folderId];
+			const children = folders.filter(f => f.parent_id === folderId);
+			for (const child of children) {
+				result.push(...getAllDescendantFolderIds(child.id, folders));
+			}
+			return result;
+		}
+
+		async function getExcludedIdsWithDescendants(): Promise<{ folderIds: string[], noteIds: string[] }> {
+			const exclusions = await getExcludedIds();
+			const allExcludedFolderIds = new Set<string>();
+			
+			for (const folderId of exclusions.folderIds) {
+				const descendants = getAllDescendantFolderIds(folderId, allFolders);
+				descendants.forEach(id => allExcludedFolderIds.add(id));
+			}
+			
+			return {
+				folderIds: Array.from(allExcludedFolderIds),
+				noteIds: exclusions.noteIds
+			};
 		}
 
 		async function refreshFolderTree() {
@@ -615,7 +675,7 @@ joplin.plugins.register({
 				const includeNotebooks = filters.includeNotebooks !== false;
 				const dateAfter = filters.dateAfter || null;
 				const dateBefore = filters.dateBefore || null;
-				const searchExclusions = await getExcludedIds();
+				const searchExclusions = await getExcludedIdsWithDescendants();
 
 				let noteResults: TreeNode[] = [];
 				let folderResults: TreeNode[] = [];
@@ -783,6 +843,16 @@ joplin.plugins.register({
 			const rcurrent = JSON.parse(await joplin.settings.value(rkey) || '[]');
 			const filtered = rcurrent.filter((id: string) => id !== message.itemId);
 			await joplin.settings.setValue(rkey, JSON.stringify(filtered));
+			return { success: true };
+		}
+
+		case 'addExclusion': {
+			const akey = message.itemType === 'folder' ? 'fullNotebookView.excludedFolderIds' : 'fullNotebookView.excludedNoteIds';
+			const acurrent = JSON.parse(await joplin.settings.value(akey) || '[]');
+			if (!acurrent.includes(message.itemId)) {
+				acurrent.push(message.itemId);
+				await joplin.settings.setValue(akey, JSON.stringify(acurrent));
+			}
 			return { success: true };
 		}
 

@@ -25,6 +25,7 @@ var state = {
 	searchHistory: [],
 	searchHistoryOpen: false,
 	searchHistoryShowAll: false,
+	shouldExpandOnNextSelect: false,
 };
 var userScrolledRecently = false;
 var userScrollTimer = null;
@@ -143,41 +144,26 @@ function renderNoteNode(note, depth) {
 	return html;
 }
 
-function renderTree() {
-	var container = document.getElementById('fnv-tree');
-	if (!container) return;
-	if (container.querySelector('.fnv-rename-input')) return;
-
-	if (state.isSearchMode) {
-		renderSearchResults(container);
-		return;
+function switchToTab(tabName) {
+	var searchTab = document.querySelector('.fnv-tab[data-tab="search"]');
+	if (searchTab && tabName === 'search') {
+		searchTab.style.display = '';
 	}
-
-	var html = '';
-	var sortedTree = sortItems(state.tree, state.sortMode);
-
-	for (var i = 0; i < sortedTree.length; i++) {
-		html += renderFolderNode(sortedTree[i], 0);
-	}
-
-	if (html === '') {
-		html = '<div class="fnv-empty-state">No notebooks found</div>';
-	}
-
-	container.innerHTML = html;
-	attachTreeEvents();
+	switchTab(tabName);
 }
 
-function renderSearchResults(container) {
+function renderSearchResults() {
+	var container = document.getElementById('fnv-search-results');
+	if (!container) return;
+	
 	if (!state.searchResults || state.searchResults.length === 0) {
-		container.innerHTML = '<div class="fnv-empty-state">No results found</div>';
-		attachTreeEvents();
+		container.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">No results found</div>';
 		return;
 	}
-
-	var html = '<div class="fnv-search-results">';
+	
 	var sorted = sortItems(state.searchResults, state.sortMode);
-
+	var html = '<div class="fnv-tree-container">';
+	
 	for (var i = 0; i < sorted.length; i++) {
 		var item = sorted[i];
 		var isSelected = item.type === 'note'
@@ -225,6 +211,26 @@ function renderSearchResults(container) {
 		}
 	}
 	html += '</div>';
+
+	container.innerHTML = html;
+	attachSearchResultsEvents();
+}
+
+function renderTree() {
+	var container = document.getElementById('fnv-tree');
+	if (!container) return;
+	if (container.querySelector('.fnv-rename-input')) return;
+
+	var html = '';
+	var sortedTree = sortItems(state.tree, state.sortMode);
+
+	for (var i = 0; i < sortedTree.length; i++) {
+		html += renderFolderNode(sortedTree[i], 0);
+	}
+
+	if (html === '') {
+		html = '<div class="fnv-empty-state">No notebooks found</div>';
+	}
 
 	container.innerHTML = html;
 	attachTreeEvents();
@@ -308,6 +314,65 @@ function attachTreeEvents() {
 	}
 }
 
+function attachSearchResultsEvents() {
+	var items = document.querySelectorAll('#fnv-search-results .fnv-tree-item');
+	for (var j = 0; j < items.length; j++) {
+		items[j].addEventListener('click', handleSearchItemClick);
+		items[j].addEventListener('dblclick', handleSearchItemDblClick);
+		items[j].addEventListener('contextmenu', handleContextMenu);
+	}
+	
+	var snippets = document.querySelectorAll('#fnv-search-results .fnv-search-snippet');
+	for (var k = 0; k < snippets.length; k++) {
+		snippets[k].addEventListener('click', handleSnippetClick);
+	}
+}
+
+var clickTimer = null;
+var clickPrevent = false;
+
+function handleSearchItemClick(e) {
+	e.stopPropagation();
+	var el = e.currentTarget;
+	var id = el.getAttribute('data-id');
+	var type = el.getAttribute('data-type');
+
+	if (type === 'folder') {
+		return;
+	} else if (type === 'note') {
+		clearTimeout(clickTimer);
+		if (clickPrevent) {
+			clickPrevent = false;
+			return;
+		}
+		clickTimer = setTimeout(function() {
+			webviewApi.postMessage({ type: 'openNote', noteId: id, line: 1 });
+		}, 250);
+	}
+}
+
+function handleSearchItemDblClick(e) {
+	e.stopPropagation();
+	clearTimeout(clickTimer);
+	clickPrevent = true;
+	
+	var el = e.currentTarget;
+	var id = el.getAttribute('data-id');
+	var type = el.getAttribute('data-type');
+
+	if (type === 'note') {
+		state.shouldExpandOnNextSelect = true;
+		webviewApi.postMessage({ type: 'openNote', noteId: id, line: 1 }).then(function() {
+			state.activeTab = 'notebooks';
+			switchToTab('notebooks');
+		});
+	} else if (type === 'folder') {
+		state.activeTab = 'notebooks';
+		switchToTab('notebooks');
+		expandToFolder(id);
+	}
+}
+
 function handleChevronClick(e) {
 	e.stopPropagation();
 	var folderId = e.currentTarget.getAttribute('data-id');
@@ -320,6 +385,7 @@ function handleItemClick(e) {
 	var type = el.getAttribute('data-type');
 
 	if (type === 'note') {
+		state.shouldExpandOnNextSelect = true;
 		webviewApi.postMessage({ type: 'openNote', noteId: id });
 		if (state.isSearchMode) {
 			state.isSearchMode = false;
@@ -328,7 +394,7 @@ function handleItemClick(e) {
 			state.selectedNoteId = id;
 			var searchInput = document.getElementById('fnv-search');
 			if (searchInput) searchInput.value = '';
-			expandToNote(id);
+			expandToNote(id, true);
 		}
 	} else if (type === 'folder') {
 		state.selectedFolderId = id;
@@ -413,11 +479,22 @@ function setupToolbar() {
 	var searchInput = document.getElementById('fnv-search');
 	if (searchInput) {
 		searchInput.addEventListener('input', function (e) {
-			clearTimeout(searchDebounce);
 			var query = e.target.value;
-			searchDebounce = setTimeout(function () {
+			var searchPageInput = document.getElementById('fnv-search-page-input');
+			if (searchPageInput) {
+				searchPageInput.value = query;
+			}
+		});
+		
+		searchInput.addEventListener('keydown', function (e) {
+			if (e.key === 'Enter') {
+				var query = e.target.value;
+				var searchPageInput = document.getElementById('fnv-search-page-input');
+				if (searchPageInput) {
+					searchPageInput.value = query;
+				}
 				handleSearch(query);
-			}, 300);
+			}
 		});
 	}
 
@@ -425,23 +502,15 @@ function setupToolbar() {
 	if (sortSelect) {
 		sortSelect.addEventListener('change', function (e) {
 			state.sortMode = e.target.value;
+			var searchSortSelect = document.getElementById('fnv-search-sort');
+			if (searchSortSelect) {
+				searchSortSelect.value = e.target.value;
+			}
 			state.folderChildren = {};
 			Object.keys(state.expandedFolders).forEach(function(folderId) {
 				delete state.expandedFolders[folderId];
 			});
 			renderTree();
-		});
-	}
-
-	var newNoteBtn = document.getElementById('fnv-new-note');
-	if (newNoteBtn) {
-		newNoteBtn.addEventListener('click', function () {
-			webviewApi.postMessage({
-				type: 'createNote',
-				folderId: state.selectedFolderId,
-			}).then(function (result) {
-				if (result && result.note) addNoteToFolderCache(result.note);
-			});
 		});
 	}
 
@@ -454,6 +523,13 @@ function setupToolbar() {
 				panel.className = state.filterPanelOpen ? '' : 'fnv-filter-hidden';
 			}
 			filterToggle.classList.toggle('fnv-active', state.filterPanelOpen);
+		});
+	}
+	
+	var collapseOthersBtn = document.getElementById('fnv-collapse-others');
+	if (collapseOthersBtn) {
+		collapseOthersBtn.addEventListener('click', function () {
+			collapseOtherFolders();
 		});
 	}
 
@@ -474,12 +550,75 @@ function setupToolbar() {
 			if (panel) {
 				var isHidden = panel.classList.contains('fnv-filter-hidden');
 				panel.className = isHidden ? '' : 'fnv-filter-hidden';
-				if (isHidden) loadExclusions();
+				if (isHidden) loadExclusions('fnv-exclusion-list');
 			}
 		});
 	}
 
 	setupSearchHistory();
+	
+	var searchPageInput = document.getElementById('fnv-search-page-input');
+	if (searchPageInput) {
+		searchPageInput.addEventListener('input', function (e) {
+			var query = e.target.value;
+			var searchInput = document.getElementById('fnv-search');
+			if (searchInput) {
+				searchInput.value = query;
+			}
+		});
+		searchPageInput.addEventListener('keydown', function (e) {
+			if (e.key === 'Enter') {
+				var query = e.target.value;
+				handleSearch(query);
+			}
+		});
+	}
+	
+	var searchSortSelect = document.getElementById('fnv-search-sort');
+	if (searchSortSelect) {
+		searchSortSelect.addEventListener('change', function (e) {
+			state.sortMode = e.target.value;
+			var sortSelect = document.getElementById('fnv-sort');
+			if (sortSelect) {
+				sortSelect.value = e.target.value;
+			}
+			renderSearchResults();
+		});
+	}
+	
+	var searchFilterToggle = document.getElementById('fnv-search-filter-toggle');
+	if (searchFilterToggle) {
+		searchFilterToggle.addEventListener('click', function () {
+			state.searchFilterPanelOpen = !state.searchFilterPanelOpen;
+			var panel = document.getElementById('fnv-search-filter-panel');
+			if (panel) {
+				panel.className = state.searchFilterPanelOpen ? '' : 'fnv-filter-hidden';
+			}
+			searchFilterToggle.classList.toggle('fnv-active', state.searchFilterPanelOpen);
+		});
+	}
+	
+	var searchManageExclusions = document.getElementById('fnv-search-manage-exclusions');
+	if (searchManageExclusions) {
+		searchManageExclusions.addEventListener('click', function () {
+			var panel = document.getElementById('fnv-search-exclusion-panel');
+			if (panel) {
+				var isHidden = panel.classList.contains('fnv-filter-hidden');
+				panel.className = isHidden ? '' : 'fnv-filter-hidden';
+				if (isHidden) loadExclusions('fnv-search-exclusion-list');
+			}
+		});
+	}
+	
+	var searchFilterNotes = document.getElementById('fnv-search-filter-notes');
+	var searchFilterNotebooks = document.getElementById('fnv-search-filter-notebooks');
+	var searchFilterDateAfter = document.getElementById('fnv-search-filter-date-after');
+	var searchFilterDateBefore = document.getElementById('fnv-search-filter-date-before');
+	
+	if (searchFilterNotes) searchFilterNotes.addEventListener('change', function () { state.filters.includeNotes = this.checked; rerunSearch(); });
+	if (searchFilterNotebooks) searchFilterNotebooks.addEventListener('change', function () { state.filters.includeNotebooks = this.checked; rerunSearch(); });
+	if (searchFilterDateAfter) searchFilterDateAfter.addEventListener('change', function () { state.filters.dateAfter = this.value ? new Date(this.value).getTime() : null; rerunSearch(); });
+	if (searchFilterDateBefore) searchFilterDateBefore.addEventListener('change', function () { state.filters.dateBefore = this.value ? new Date(this.value + 'T23:59:59').getTime() : null; rerunSearch(); });
 }
 
 async function handleSearch(query) {
@@ -488,12 +627,23 @@ async function handleSearch(query) {
 	if (!query || query.trim().length === 0) {
 		state.isSearchMode = false;
 		state.searchResults = [];
-		renderTree();
+		switchToTab('search');
+		renderSearchResults();
 		return;
 	}
 
 	state.isSearchMode = true;
-	addSearchHistory(query);
+	
+	var searchInput = document.getElementById('fnv-search');
+	if (searchInput) {
+		searchInput.value = query;
+	}
+	
+	var searchPageInput = document.getElementById('fnv-search-page-input');
+	if (searchPageInput) {
+		searchPageInput.value = query;
+	}
+	
 	var result = await webviewApi.postMessage({
 		type: 'search',
 		query: query,
@@ -507,11 +657,16 @@ async function handleSearch(query) {
 
 	if (result && result.type === 'search') {
 		state.searchResults = result.results;
+		if (state.searchResults && state.searchResults.length > 0) {
+			addSearchHistory(query);
+		}
+		switchToTab('search');
 	} else if (result && result.type === 'tree') {
 		state.isSearchMode = false;
 		state.tree = result.tree;
+		switchToTab('search');
 	}
-	renderTree();
+	renderSearchResults();
 }
 
 function rerunSearch() {
@@ -520,16 +675,16 @@ function rerunSearch() {
 	}
 }
 
-async function loadExclusions() {
+async function loadExclusions(containerId) {
 	var result = await webviewApi.postMessage({ type: 'getExclusions' });
 	if (!result) return;
 	state.excludedFolderIds = result.excludedFolderIds || [];
 	state.excludedNoteIds = result.excludedNoteIds || [];
-	renderExclusionList(result.folderNames || {}, result.noteNames || {});
+	renderExclusionList(result.folderNames || {}, result.noteNames || {}, containerId);
 }
 
-function renderExclusionList(folderNames, noteNames) {
-	var container = document.getElementById('fnv-exclusion-list');
+function renderExclusionList(folderNames, noteNames, containerId) {
+	var container = document.getElementById(containerId || 'fnv-exclusion-list');
 	if (!container) return;
 	var html = '';
 	if (state.excludedFolderIds.length === 0 && state.excludedNoteIds.length === 0) {
@@ -561,7 +716,8 @@ function renderExclusionList(folderNames, noteNames) {
 			var id = e.currentTarget.getAttribute('data-id');
 			var itemType = e.currentTarget.getAttribute('data-item-type');
 			webviewApi.postMessage({ type: 'removeExclusion', itemId: id, itemType: itemType }).then(function () {
-				loadExclusions();
+				loadExclusions('fnv-exclusion-list');
+				loadExclusions('fnv-search-exclusion-list');
 				refreshTreeAfterExclusion();
 			});
 		});
@@ -569,31 +725,52 @@ function renderExclusionList(folderNames, noteNames) {
 }
 
 function setupSearchHistory() {
-	var searchInput = document.getElementById('fnv-search');
-	if (!searchInput) return;
 	try {
 		state.searchHistory = JSON.parse(localStorage.getItem('fnv-search-history') || '[]');
 	} catch (e) { state.searchHistory = []; }
 
-	searchInput.addEventListener('focus', function () {
-		if (state.searchHistory.length > 0) {
-			state.searchHistoryShowAll = false;
-			showSearchHistoryDropdown();
-		}
-	});
+	var searchInput = document.getElementById('fnv-search');
+	var searchPageInput = document.getElementById('fnv-search-page-input');
+	
+	if (searchInput) {
+		searchInput.addEventListener('focus', function () {
+			if (state.searchHistory.length > 0) {
+				state.searchHistoryShowAll = false;
+				showSearchHistoryDropdown('fnv-search-wrap', 'fnv-search');
+			}
+		});
 
-	searchInput.addEventListener('keydown', function (e) {
-		if (e.key === 'Escape') {
-			dismissSearchHistory();
-			searchInput.blur();
-		}
-	});
+		searchInput.addEventListener('keydown', function (e) {
+			if (e.key === 'Escape') {
+				dismissSearchHistory();
+				searchInput.blur();
+			}
+		});
+	}
+	
+	if (searchPageInput) {
+		searchPageInput.addEventListener('focus', function () {
+			if (state.searchHistory.length > 0) {
+				state.searchHistoryShowAll = false;
+				showSearchHistoryDropdown('fnv-search-page-wrap', 'fnv-search-page-input');
+			}
+		});
+
+		searchPageInput.addEventListener('keydown', function (e) {
+			if (e.key === 'Escape') {
+				dismissSearchHistory();
+				searchPageInput.blur();
+			}
+		});
+	}
 
 	document.addEventListener('mousedown', function (e) {
 		var dropdown = document.getElementById('fnv-search-history');
 		if (!dropdown) return;
 		var searchWrap = document.getElementById('fnv-search-wrap');
-		if (searchWrap && !searchWrap.contains(e.target)) {
+		var searchPageWrap = document.getElementById('fnv-search-page-wrap');
+		if (searchWrap && !searchWrap.contains(e.target) && 
+		    searchPageWrap && !searchPageWrap.contains(e.target)) {
 			dismissSearchHistory();
 		}
 	});
@@ -613,11 +790,11 @@ function addSearchHistory(query) {
 	try { localStorage.setItem('fnv-search-history', JSON.stringify(state.searchHistory)); } catch (e) {}
 }
 
-function showSearchHistoryDropdown() {
+function showSearchHistoryDropdown(wrapId, inputId) {
 	var existing = document.getElementById('fnv-search-history');
 	if (existing) existing.remove();
 
-	var wrap = document.getElementById('fnv-search-wrap');
+	var wrap = document.getElementById(wrapId);
 	if (!wrap || state.searchHistory.length === 0) return;
 
 	var limit = state.searchHistoryShowAll ? Math.min(state.searchHistory.length, 50) : 5;
@@ -627,7 +804,11 @@ function showSearchHistoryDropdown() {
 	dropdown.id = 'fnv-search-history';
 	dropdown.className = 'fnv-search-history-dropdown';
 
-	var html = '';
+	var html = '<div class="fnv-search-history-header">';
+	html += '<span class="fnv-search-history-title">Search History</span>';
+	html += '<span class="fnv-search-history-close" id="fnv-search-history-close">×</span>';
+	html += '</div>';
+	
 	for (var i = 0; i < items.length; i++) {
 		html += '<div class="fnv-search-history-item" data-query="' + escapeHtml(items[i]) + '">' + escapeHtml(items[i]) + '</div>';
 	}
@@ -640,12 +821,25 @@ function showSearchHistoryDropdown() {
 	wrap.appendChild(dropdown);
 	state.searchHistoryOpen = true;
 
+	var closeBtn = document.getElementById('fnv-search-history-close');
+	if (closeBtn) {
+		closeBtn.addEventListener('click', function () {
+			dismissSearchHistory();
+		});
+	}
+
 	var histItems = dropdown.querySelectorAll('.fnv-search-history-item');
 	for (var j = 0; j < histItems.length; j++) {
 		histItems[j].addEventListener('click', function (e) {
 			var q = e.currentTarget.getAttribute('data-query');
-			var input = document.getElementById('fnv-search');
-			if (input) { input.value = q; handleSearch(q); }
+			var input = document.getElementById(inputId);
+			if (input) { 
+				input.value = q;
+				var otherInputId = inputId === 'fnv-search' ? 'fnv-search-page-input' : 'fnv-search';
+				var otherInput = document.getElementById(otherInputId);
+				if (otherInput) otherInput.value = q;
+				handleSearch(q);
+			}
 			dropdown.remove();
 			state.searchHistoryOpen = false;
 		});
@@ -655,7 +849,7 @@ function showSearchHistoryDropdown() {
 	if (moreBtn) {
 		moreBtn.addEventListener('click', function () {
 			state.searchHistoryShowAll = true;
-			showSearchHistoryDropdown();
+			showSearchHistoryDropdown(wrapId, inputId);
 		});
 	}
 
@@ -798,8 +992,12 @@ function switchTab(tabName) {
 		activeView.classList.add('fnv-view-active');
 	}
 
-	if (tabName === 'toc' && state.tocHeadings.length === 0) {
-		loadToc();
+	if (tabName === 'toc') {
+		if (state.tocHeadings.length === 0) {
+			loadToc();
+		} else {
+			renderToc();
+		}
 	}
 }
 
@@ -900,7 +1098,7 @@ async function expandToNote(noteId, shouldScroll) {
 	setTimeout(function () {
 		if (shouldScroll === false) return;
 		var activeEl = document.querySelector('.fnv-active-note');
-		if (activeEl) activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+		if (activeEl) activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
 	}, 50);
 }
 
@@ -947,6 +1145,91 @@ async function expandToFolder(folderId) {
 			}, { once: true });
 		}
 	}, 50);
+}
+
+async function collapseOtherFolders() {
+	if (!state.selectedFolderId) {
+		showToast('No folder selected');
+		return;
+	}
+
+	var children = state.folderChildren[state.selectedFolderId];
+	if (!children || children.length === 0) {
+		var expandResult = await webviewApi.postMessage({ type: 'expandFolder', folderId: state.selectedFolderId });
+		if (expandResult) {
+			var newChildren = [];
+			if (expandResult.folders) {
+				for (var fi = 0; fi < expandResult.folders.length; fi++) {
+					var f = expandResult.folders[fi];
+					newChildren.push({ id: f.id, title: f.title, type: 'folder', parent_id: f.parent_id, icon: f.icon, note_count: f.note_count });
+				}
+			}
+			if (expandResult.notes) {
+				for (var ni = 0; ni < expandResult.notes.length; ni++) {
+					var n = expandResult.notes[ni];
+					newChildren.push({ id: n.id, title: n.title, type: 'note', parent_id: n.parent_id, is_todo: n.is_todo, todo_completed: n.todo_completed, updated_time: n.updated_time });
+				}
+			}
+			state.folderChildren[state.selectedFolderId] = newChildren;
+			children = newChildren;
+		}
+	}
+
+	var subFolders = [];
+	if (children) {
+		for (var i = 0; i < children.length; i++) {
+			if (children[i].type === 'folder') {
+				subFolders.push(children[i].id);
+			}
+		}
+	}
+
+	if (subFolders.length === 0) {
+		showToast('No subfolders in current folder');
+		return;
+	}
+
+	var anyExpanded = false;
+	for (var j = 0; j < subFolders.length; j++) {
+		if (state.expandedFolders[subFolders[j]]) {
+			anyExpanded = true;
+			break;
+		}
+	}
+
+	if (anyExpanded) {
+		for (var k = 0; k < subFolders.length; k++) {
+			delete state.expandedFolders[subFolders[k]];
+		}
+		showToast('Collapsed all subfolders');
+	} else {
+		for (var m = 0; m < subFolders.length; m++) {
+			var subfolderId = subFolders[m];
+			state.expandedFolders[subfolderId] = true;
+			if (!state.folderChildren[subfolderId]) {
+				var subExpandResult = await webviewApi.postMessage({ type: 'expandFolder', folderId: subfolderId });
+				if (subExpandResult) {
+					var subChildren = [];
+					if (subExpandResult.folders) {
+						for (var sfi = 0; sfi < subExpandResult.folders.length; sfi++) {
+							var sf = subExpandResult.folders[sfi];
+							subChildren.push({ id: sf.id, title: sf.title, type: 'folder', parent_id: sf.parent_id, icon: sf.icon, note_count: sf.note_count });
+						}
+					}
+					if (subExpandResult.notes) {
+						for (var sni = 0; sni < subExpandResult.notes.length; sni++) {
+							var sn = subExpandResult.notes[sni];
+							subChildren.push({ id: sn.id, title: sn.title, type: 'note', parent_id: sn.parent_id, is_todo: sn.is_todo, todo_completed: sn.todo_completed, updated_time: sn.updated_time });
+						}
+					}
+					state.folderChildren[subfolderId] = subChildren;
+				}
+			}
+		}
+		showToast('Expanded all subfolders');
+	}
+
+	renderTree();
 }
 
 
@@ -1048,13 +1331,20 @@ function showNoteContextMenu(x, y, noteId, el) {
 	var titleEl = el.querySelector('.fnv-title');
 	if (titleEl) noteTitle = titleEl.textContent;
 
+	var isExcluded = state.excludedNoteIds.includes(noteId);
+
 	var items = [
 		{ label: 'Open', action: function () { webviewApi.postMessage({ type: 'openNote', noteId: noteId }); } },
 		{ label: 'Open in New Window', action: function () { webviewApi.postMessage({ type: 'openNoteInNewWindow', noteId: noteId }); } },
 		{ separator: true },
 		{ label: 'New Note', action: function () {
 			webviewApi.postMessage({ type: 'createNote', folderId: state.selectedFolderId }).then(function (result) {
-				if (result && result.note) addNoteToFolderCache(result.note);
+				if (result && result.note) {
+					addNoteToFolderCache(result.note);
+					setTimeout(function () {
+						expandToNote(result.note.id, true);
+					}, 100);
+				}
 			});
 		}},
 		{ label: 'New Notebook', action: function () { webviewApi.postMessage({ type: 'newSubNotebook', parentId: state.selectedFolderId }); } },
@@ -1089,6 +1379,24 @@ function showNoteContextMenu(x, y, noteId, el) {
 			});
 		}},
 		{ separator: true },
+		{ label: isExcluded ? 'Include in Search' : 'Exclude from Search', action: function () {
+			if (isExcluded) {
+				webviewApi.postMessage({ type: 'removeExclusion', itemId: noteId, itemType: 'note' }).then(function () {
+					loadExclusions('fnv-exclusion-list');
+					loadExclusions('fnv-search-exclusion-list');
+					refreshTreeAfterExclusion();
+					showToast(isExcluded ? 'Note included in search' : 'Note excluded from search');
+				});
+			} else {
+				webviewApi.postMessage({ type: 'addExclusion', itemId: noteId, itemType: 'note' }).then(function () {
+					loadExclusions('fnv-exclusion-list');
+					loadExclusions('fnv-search-exclusion-list');
+					refreshTreeAfterExclusion();
+					showToast('Note excluded from search');
+				});
+			}
+		}},
+		{ separator: true },
 		{ label: 'Properties', action: function () { webviewApi.postMessage({ type: 'showNoteProperties', noteId: noteId }); } },
 		{ label: 'Publish', action: function () { webviewApi.postMessage({ type: 'publishNote', noteId: noteId }); } },
 		{ separator: true },
@@ -1103,10 +1411,17 @@ function showFolderContextMenu(x, y, folderId, el) {
 	var titleEl = el.querySelector('.fnv-title');
 	if (titleEl) folderTitle = titleEl.textContent;
 
+	var isExcluded = state.excludedFolderIds.includes(folderId);
+
 	var items = [
 		{ label: 'New Note', action: function () {
 			webviewApi.postMessage({ type: 'createNote', folderId: folderId }).then(function (result) {
-				if (result && result.note) addNoteToFolderCache(result.note);
+				if (result && result.note) {
+					addNoteToFolderCache(result.note);
+					setTimeout(function () {
+						expandToNote(result.note.id, true);
+					}, 100);
+				}
 			});
 		}},
 		{ label: 'New Notebook', action: function () { webviewApi.postMessage({ type: 'newSubNotebook', parentId: folderId }); } },
@@ -1121,6 +1436,24 @@ function showFolderContextMenu(x, y, folderId, el) {
 					showToast('Export failed: ' + result.error);
 				}
 			});
+		}},
+		{ separator: true },
+		{ label: isExcluded ? 'Include in Search' : 'Exclude from Search', action: function () {
+			if (isExcluded) {
+				webviewApi.postMessage({ type: 'removeExclusion', itemId: folderId, itemType: 'folder' }).then(function () {
+					loadExclusions('fnv-exclusion-list');
+					loadExclusions('fnv-search-exclusion-list');
+					refreshTreeAfterExclusion();
+					showToast('Notebook included in search');
+				});
+			} else {
+				webviewApi.postMessage({ type: 'addExclusion', itemId: folderId, itemType: 'folder' }).then(function () {
+					loadExclusions('fnv-exclusion-list');
+					loadExclusions('fnv-search-exclusion-list');
+					refreshTreeAfterExclusion();
+					showToast('Notebook and subfolders excluded from search');
+				});
+			}
 		}},
 		{ separator: true },
 		{ label: 'Delete Notebook', danger: true, action: function () { showDeleteFolderDialog(folderId, folderTitle); } },
@@ -1362,12 +1695,12 @@ webviewApi.onMessage(function (message) {
 
 	switch (message.type) {
 		case 'noteSelected':
-			var noteChanged = state.selectedNoteId !== message.noteId;
 			state.selectedNoteId = message.noteId;
 			state.selectedFolderId = message.folderId || state.selectedFolderId;
-			if (message.noteId && !state.isSearchMode) {
-				expandToNote(message.noteId, noteChanged);
-			} else {
+			if (state.shouldExpandOnNextSelect && message.noteId) {
+				state.shouldExpandOnNextSelect = false;
+				expandToNote(message.noteId, true);
+			} else if (!state.isSearchMode) {
 				renderTree();
 			}
 			break;
@@ -1406,9 +1739,6 @@ webviewApi.onMessage(function (message) {
 		case 'tocUpdated':
 			state.tocHeadings = message.headings || [];
 			state.tocNoteTitle = message.noteTitle || '';
-			if (state.activeTab === 'toc') {
-				renderToc();
-			}
 			break;
 
 		case 'syncStarted':
