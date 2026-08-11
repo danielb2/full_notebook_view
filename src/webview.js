@@ -196,16 +196,98 @@ function renderSearchResults(container) {
 
 		html += '<div class="fnv-tree-item' + typeClass + (isSelected ? ' fnv-selected' : '') + '" data-id="' + item.id + '" data-type="' + item.type + '" style="padding-left:8px">';
 		html += '<span class="fnv-icon">' + icon + '</span>';
-		html += '<span class="fnv-title">' + escapeHtml(item.title || 'Untitled') + '</span>';
+		
+		var displayTitle = item.title || 'Untitled';
+		if (item.type === 'note' && item.path) {
+			displayTitle = item.path + ' / ' + displayTitle;
+		}
+		html += '<span class="fnv-title">' + escapeHtml(displayTitle) + '</span>';
+		
 		if (item.type === 'folder') {
 			html += '<span class="fnv-search-type-tag">notebook</span>';
 		}
 		html += '</div>';
+		
+		if (item.type === 'note' && item.body && item.searchQuery) {
+			var matches = extractSearchMatches(item.body, item.searchQuery);
+			if (matches.snippets.length > 0) {
+				html += '<div class="fnv-search-matches">';
+				var maxSnippets = 3;
+				for (var j = 0; j < Math.min(maxSnippets, matches.snippets.length); j++) {
+					var match = matches.snippets[j];
+					html += '<div class="fnv-search-snippet" data-note-id="' + item.id + '" data-line="' + match.line + '" data-text="' + escapeHtml(match.text) + '">' + match.html + '</div>';
+				}
+				if (matches.total > maxSnippets) {
+					html += '<div class="fnv-search-more" data-note-id="' + item.id + '">show ' + (matches.total - maxSnippets) + ' more matches</div>';
+				}
+				html += '</div>';
+			}
+		}
 	}
 	html += '</div>';
 
 	container.innerHTML = html;
 	attachTreeEvents();
+}
+
+function extractSearchMatches(body, query) {
+	var snippets = [];
+	var lines = body.split('\n');
+	var lowerQuery = query.toLowerCase();
+	
+	for (var i = 0; i < lines.length; i++) {
+		var line = lines[i];
+		var lowerLine = line.toLowerCase();
+		
+		if (lowerLine.indexOf(lowerQuery) !== -1) {
+			var highlighted = highlightMatch(line, query);
+			snippets.push({
+				html: highlighted,
+				line: i + 1,
+				text: line
+			});
+		}
+	}
+	
+	return {
+		snippets: snippets,
+		total: snippets.length
+	};
+}
+
+function highlightMatch(text, query) {
+	var lowerText = text.toLowerCase();
+	var lowerQuery = query.toLowerCase();
+	var index = lowerText.indexOf(lowerQuery);
+	
+	if (index === -1) {
+		return escapeHtml(text);
+	}
+	
+	var maxLength = 200;
+	var start = Math.max(0, index - 50);
+	var end = Math.min(text.length, index + query.length + 150);
+	
+	var snippet = text.substring(start, end);
+	if (start > 0) snippet = '...' + snippet;
+	if (end < text.length) snippet = snippet + '...';
+	
+	var result = '';
+	var pos = 0;
+	var lowerSnippet = snippet.toLowerCase();
+	
+	while (true) {
+		var matchIndex = lowerSnippet.indexOf(lowerQuery, pos);
+		if (matchIndex === -1) {
+			result += escapeHtml(snippet.substring(pos));
+			break;
+		}
+		result += escapeHtml(snippet.substring(pos, matchIndex));
+		result += '<span class="fnv-search-highlight">' + escapeHtml(snippet.substring(matchIndex, matchIndex + query.length)) + '</span>';
+		pos = matchIndex + query.length;
+	}
+	
+	return result;
 }
 
 function attachTreeEvents() {
@@ -218,6 +300,11 @@ function attachTreeEvents() {
 	for (var j = 0; j < items.length; j++) {
 		items[j].addEventListener('click', handleItemClick);
 		items[j].addEventListener('contextmenu', handleContextMenu);
+	}
+	
+	var snippets = document.querySelectorAll('.fnv-search-snippet');
+	for (var k = 0; k < snippets.length; k++) {
+		snippets[k].addEventListener('click', handleSnippetClick);
 	}
 }
 
@@ -255,6 +342,18 @@ function handleItemClick(e) {
 		} else {
 			toggleFolder(id);
 		}
+	}
+}
+
+function handleSnippetClick(e) {
+	e.stopPropagation();
+	var el = e.currentTarget;
+	var noteId = el.getAttribute('data-note-id');
+	var line = parseInt(el.getAttribute('data-line'), 10);
+	var text = el.getAttribute('data-text');
+	
+	if (noteId) {
+		webviewApi.postMessage({ type: 'openNote', noteId: noteId, line: line, searchText: text });
 	}
 }
 

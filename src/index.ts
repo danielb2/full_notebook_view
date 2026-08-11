@@ -15,6 +15,7 @@ interface NoteItem {
 	is_todo: number;
 	todo_completed: number;
 	updated_time: number;
+	body?: string;
 }
 
 interface TreeNode {
@@ -119,7 +120,7 @@ async function searchNotes(query: string): Promise<NoteItem[]> {
 	while (true) {
 		const result = await joplin.data.get(['search'], {
 			query: query,
-			fields: ['id', 'title', 'parent_id', 'is_todo', 'todo_completed', 'updated_time'],
+			fields: ['id', 'title', 'parent_id', 'is_todo', 'todo_completed', 'updated_time', 'body'],
 			page: page,
 			limit: 50,
 		});
@@ -544,6 +545,34 @@ joplin.plugins.register({
 
 				case 'openNote': {
 					await joplin.commands.execute('openNote', message.noteId);
+					
+					if (message.line) {
+						setTimeout(async () => {
+							try {
+								const note = await joplin.workspace.selectedNote();
+								if (note && note.id === message.noteId && note.body) {
+									const lines = note.body.split('\n');
+									const targetLine = message.line - 1;
+									const totalLines = lines.length;
+									
+									const offset = 15;
+									const scrollToLine = Math.max(0, Math.min(totalLines - 1, targetLine + offset));
+									
+									await joplin.commands.execute('editor.execCommand', {
+										name: 'setCursor',
+										args: [scrollToLine, 0]
+									});
+									
+									await new Promise(resolve => setTimeout(resolve, 50));
+									
+									await joplin.commands.execute('editor.execCommand', {
+										name: 'setCursor',
+										args: [targetLine, 0]
+									});
+								}
+							} catch (e) {}
+						}, 200);
+					}
 					return { success: true };
 				}
 
@@ -593,6 +622,7 @@ joplin.plugins.register({
 
 				if (includeNotes) {
 					const notes = await searchNotes(query);
+					const folderMap = new Map(allFolders.map(f => [f.id, f]));
 					noteResults = notes
 						.filter(n => {
 							if (searchExclusions.noteIds.includes(n.id)) return false;
@@ -601,15 +631,28 @@ joplin.plugins.register({
 							if (dateBefore && n.updated_time > dateBefore) return false;
 							return true;
 						})
-						.map(n => ({
-							id: n.id,
-							title: n.title,
-							type: 'note' as const,
-							parent_id: n.parent_id,
-							is_todo: n.is_todo,
-							todo_completed: n.todo_completed,
-							updated_time: n.updated_time,
-						}));
+						.map(n => {
+							const pathTitles: string[] = [];
+							let currentFolderId = n.parent_id;
+							while (currentFolderId) {
+								const folder = folderMap.get(currentFolderId);
+								if (!folder) break;
+								pathTitles.unshift(folder.title);
+								currentFolderId = folder.parent_id;
+							}
+							return {
+								id: n.id,
+								title: n.title,
+								type: 'note' as const,
+								parent_id: n.parent_id,
+								is_todo: n.is_todo,
+								todo_completed: n.todo_completed,
+								updated_time: n.updated_time,
+								path: pathTitles.join(' / '),
+								body: n.body || '',
+								searchQuery: query,
+							};
+						});
 				}
 
 				if (includeNotebooks) {

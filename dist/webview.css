@@ -387,6 +387,46 @@ html, body {
 	font-weight: 500;
 }
 
+.fnv-search-matches {
+	padding: 4px 8px 8px 28px;
+	font-size: 11px;
+	color: var(--joplin-color, #333);
+}
+
+.fnv-search-snippet {
+	padding: 3px 6px;
+	margin: 2px 0;
+	line-height: 1.4;
+	cursor: pointer;
+	border-radius: 3px;
+	background: var(--joplin-background-color-hover3, rgba(0, 0, 0, 0.01));
+	transition: background 0.1s;
+}
+
+.fnv-search-snippet:hover {
+	background: var(--joplin-background-color-hover3, rgba(0, 0, 0, 0.04));
+}
+
+.fnv-search-highlight {
+	background: rgba(255, 215, 0, 0.3);
+	font-weight: 500;
+	padding: 0 1px;
+	border-radius: 2px;
+}
+
+.fnv-search-more {
+	padding: 4px 6px;
+	margin-top: 4px;
+	font-size: 10px;
+	color: var(--joplin-color2, #4a90d9);
+	cursor: pointer;
+	font-style: italic;
+}
+
+.fnv-search-more:hover {
+	text-decoration: underline;
+}
+
 /* --- Children / Empty --- */
 
 .fnv-children {
