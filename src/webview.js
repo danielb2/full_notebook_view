@@ -1705,6 +1705,12 @@ webviewApi.onMessage(function (message) {
 			}
 			break;
 
+		case 'navigateBack':
+			break;
+
+		case 'navigateForward':
+			break;
+
 		case 'treeRefreshed':
 			state.tree = message.tree || [];
 			renderTree();
@@ -1775,6 +1781,7 @@ async function initialize() {
 	setupToolbar();
 	setupTabs();
 	setupSyncBar();
+	setupNavigationListeners();
 
 	var treeContainer = document.getElementById('fnv-tree');
 	if (treeContainer) {
@@ -1801,4 +1808,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
 if (document.readyState !== 'loading') {
 	initialize();
+}
+
+function setupNavigationListeners() {
+	var fnvRoot = document.getElementById('fnv-root');
+	if (fnvRoot) {
+		fnvRoot.addEventListener('mousedown', function(e) {
+			if (e.button === 3) {
+				e.preventDefault();
+				e.stopPropagation();
+				webviewApi.postMessage({ type: 'triggerNavigateBack' });
+			} else if (e.button === 4) {
+				e.preventDefault();
+				e.stopPropagation();
+				webviewApi.postMessage({ type: 'triggerNavigateForward' });
+			}
+		});
+	}
 }

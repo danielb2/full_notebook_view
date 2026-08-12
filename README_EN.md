@@ -64,6 +64,14 @@
 - **Emoji Icon Support** — Automatically detects and displays Joplin notebook emoji icons
 - **Todo Status** — Distinguishes between regular notes and todos (different icons for completed/incomplete)
 
+### Smart Navigation History
+- **Cursor Position Tracking** — Automatically records cursor positions in the editor, saved every 2 seconds
+- **Cross-File Navigation** — Supports forward and backward navigation between different notes
+- **Precise Restoration** — Restores exact cursor position (line and column numbers)
+- **Mouse Side Button Support** — Use mouse buttons 3/4 for quick navigation within the plugin panel
+- **Global Shortcuts** — Ctrl+Alt+Left/Right work everywhere
+- **Smart Deduplication** — Automatically merges similar positions to avoid redundant history
+
 ### Dual-Tab Sidebar
 - **Notebooks** — Tree navigation for notebooks and notes
 - **Outline** — Auto-extracts Markdown headings from the current note; click to jump to the corresponding position
@@ -120,6 +128,10 @@ After installation, the plugin adds a sidebar panel to the right side of Joplin.
 | Click a note title | Open the note in the editor |
 | Right-click | Open the context menu (new, export, delete, etc.) |
 | Outline tab | Click a heading to jump to the corresponding position |
+| Mouse button 3 (in plugin panel) | Navigate back to the previous cursor position |
+| Mouse button 4 (in plugin panel) | Navigate forward to the next cursor position |
+| Ctrl + Alt + Left | Navigate back to the previous cursor position (global shortcut) |
+| Ctrl + Alt + Right | Navigate forward to the next cursor position (global shortcut) |
 
 ### Settings
 

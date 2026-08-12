@@ -1,5 +1,5 @@
 import joplin from 'api';
-import { ToolbarButtonLocation, SettingItemType } from 'api/types';
+import { ToolbarButtonLocation, SettingItemType, ContentScriptType } from 'api/types';
 
 interface FolderItem {
 	id: string;
@@ -36,6 +36,15 @@ interface HeadingItem {
 	text: string;
 	slug: string;
 	lineno: number;
+}
+
+interface NavigationEntry {
+	noteId: string;
+	noteTitle: string;
+	line: number;
+	ch: number;
+	timestamp: number;
+	type?: 'manual' | 'auto' | 'note-change' | 'large-jump';
 }
 
 function slugify(text: string): string {
@@ -255,12 +264,283 @@ joplin.plugins.register({
 	onStart: async function () {
 		const panel = await joplin.views.panels.create('fullNotebookView.panel');
 
+		let navigationHistory: NavigationEntry[] = [];
+		let navigationIndex = -1;
+		let isNavigating = false;
+		let cursorTrackingInterval: NodeJS.Timeout | null = null;
+		let lastNavigationTargetNoteId = '';
+		let lastNavigationTargetLine = -1;
+		let lastNavigationTargetTime = 0;
+		let lastToggleIndex = -1;
+
+		async function loadNavigationHistory(): Promise<void> {
+			try {
+				const saved = await joplin.settings.value('fullNotebookView.navigationHistory');
+				if (saved) {
+					const parsed = JSON.parse(saved);
+					if (Array.isArray(parsed)) {
+						navigationHistory = parsed;
+						navigationIndex = navigationHistory.length - 1;
+					}
+				}
+			} catch (e) {
+				console.error('Failed to load navigation history:', e);
+			}
+		}
+
+		let saveDebounceTimeout: NodeJS.Timeout | null = null;
+		async function saveNavigationHistory(): Promise<void> {
+			if (saveDebounceTimeout) {
+				clearTimeout(saveDebounceTimeout);
+			}
+			saveDebounceTimeout = setTimeout(async () => {
+				try {
+					const toSave = navigationHistory.slice(-500);
+					await joplin.settings.setValue('fullNotebookView.navigationHistory', JSON.stringify(toSave));
+				} catch (e) {
+					console.error('Failed to save navigation history:', e);
+				}
+			}, 2000);
+		}
+
+		function cleanOldEntries(): void {
+			const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+			navigationHistory = navigationHistory.filter(entry => entry.timestamp > thirtyDaysAgo);
+		}
+
+		async function getCurrentCursorPosition(): Promise<{ line: number; ch: number } | null> {
+			try {
+				const result = await joplin.commands.execute('editor.execCommand', {
+					name: 'getCursor',
+					args: [],
+				});
+				if (result && typeof result.line === 'number' && typeof result.ch === 'number') {
+					return { line: result.line, ch: result.ch };
+				}
+			} catch (e) {
+			}
+			return null;
+		}
+
+		async function addToNavigationHistory(type: 'manual' | 'auto' | 'note-change' | 'large-jump' = 'auto') {
+			if (isNavigating) return;
+
+			try {
+				const note = await joplin.workspace.selectedNote();
+				if (!note) return;
+
+				const cursor = await getCurrentCursorPosition();
+				const line = cursor ? cursor.line : 0;
+				const ch = cursor ? cursor.ch : 0;
+
+				const now = Date.now();
+				const lastEntry = navigationHistory[navigationIndex];
+				
+				if (lastNavigationTargetNoteId === note.id &&
+					lastNavigationTargetLine === line &&
+					now - lastNavigationTargetTime < 3000) {
+					return;
+				}
+				
+				if (lastEntry && 
+					lastEntry.noteId === note.id && 
+					lastEntry.line === line &&
+					now - lastEntry.timestamp < 2000) {
+					return;
+				}
+
+				if (type === 'auto' && cursor && lastEntry && lastEntry.noteId === note.id) {
+					const lineDiff = Math.abs(line - lastEntry.line);
+					const timeDiff = now - lastEntry.timestamp;
+					
+					if (lineDiff <= 10 && timeDiff < 5000) {
+						return;
+					}
+				}
+
+				navigationHistory.splice(navigationIndex + 1);
+				navigationHistory.push({
+					noteId: note.id,
+					noteTitle: note.title,
+					line: line,
+					ch: ch,
+					timestamp: now,
+					type: type,
+				});
+				navigationIndex = navigationHistory.length - 1;
+
+				if (navigationHistory.length > 500) {
+					navigationHistory.shift();
+					navigationIndex--;
+				}
+
+				await saveNavigationHistory();
+			} catch (e) {
+				console.error('Failed to add navigation entry:', e);
+			}
+		}
+
+		async function navigateBack() {
+			if (navigationIndex <= 0) return;
+
+			const oldIndex = navigationIndex;
+			navigationIndex--;
+			const entry = navigationHistory[navigationIndex];
+			
+			if (!entry) {
+				navigationIndex = oldIndex;
+				return;
+			}
+
+			lastNavigationTargetNoteId = entry.noteId;
+			lastNavigationTargetLine = entry.line;
+			lastNavigationTargetTime = Date.now();
+
+			try {
+				isNavigating = true;
+				const currentNote = await joplin.workspace.selectedNote();
+				
+				if (currentNote && currentNote.id !== entry.noteId) {
+					await joplin.commands.execute('openNote', entry.noteId);
+					await new Promise(resolve => setTimeout(resolve, 300));
+				}
+
+				await joplin.commands.execute('editor.execCommand', {
+					name: 'setCursor',
+					args: [entry.line, entry.ch],
+				});
+
+				setTimeout(() => {
+					isNavigating = false;
+				}, 1500);
+			} catch (e) {
+				navigationIndex = oldIndex;
+				isNavigating = false;
+			}
+		}
+
+		async function navigateForward() {
+			if (navigationIndex >= navigationHistory.length - 1) return;
+
+			const oldIndex = navigationIndex;
+			navigationIndex++;
+			const entry = navigationHistory[navigationIndex];
+			
+			if (!entry) {
+				navigationIndex = oldIndex;
+				return;
+			}
+
+			lastNavigationTargetNoteId = entry.noteId;
+			lastNavigationTargetLine = entry.line;
+			lastNavigationTargetTime = Date.now();
+
+			try {
+				isNavigating = true;
+				const currentNote = await joplin.workspace.selectedNote();
+				
+				if (currentNote && currentNote.id !== entry.noteId) {
+					await joplin.commands.execute('openNote', entry.noteId);
+					await new Promise(resolve => setTimeout(resolve, 300));
+				}
+
+				await joplin.commands.execute('editor.execCommand', {
+					name: 'setCursor',
+					args: [entry.line, entry.ch],
+				});
+
+				setTimeout(() => {
+					isNavigating = false;
+				}, 1500);
+			} catch (e) {
+				navigationIndex = oldIndex;
+				isNavigating = false;
+			}
+		}
+
+		async function toggleLastLocation() {
+			if (navigationHistory.length < 2) return;
+
+			const currentIndex = navigationIndex;
+			const targetIndex = (lastToggleIndex !== -1 && lastToggleIndex !== currentIndex) 
+				? lastToggleIndex 
+				: Math.max(0, currentIndex - 1);
+
+			if (targetIndex === currentIndex) return;
+
+			lastToggleIndex = currentIndex;
+
+			const oldIndex = navigationIndex;
+			navigationIndex = targetIndex;
+			const entry = navigationHistory[navigationIndex];
+			
+			if (!entry) {
+				navigationIndex = oldIndex;
+				return;
+			}
+
+			lastNavigationTargetNoteId = entry.noteId;
+			lastNavigationTargetLine = entry.line;
+			lastNavigationTargetTime = Date.now();
+
+			try {
+				isNavigating = true;
+				const currentNote = await joplin.workspace.selectedNote();
+				
+				if (currentNote && currentNote.id !== entry.noteId) {
+					await joplin.commands.execute('openNote', entry.noteId);
+					await new Promise(resolve => setTimeout(resolve, 300));
+				}
+
+				await joplin.commands.execute('editor.execCommand', {
+					name: 'setCursor',
+					args: [entry.line, entry.ch],
+				});
+
+				setTimeout(() => {
+					isNavigating = false;
+				}, 1500);
+			} catch (e) {
+				navigationIndex = oldIndex;
+				isNavigating = false;
+			}
+		}
+
+		cursorTrackingInterval = setInterval(() => {
+			addToNavigationHistory();
+		}, 2000);
+
+		await joplin.contentScripts.register(
+			ContentScriptType.CodeMirrorPlugin,
+			'navigationPlugin',
+			'./codeMirrorPlugin.js'
+		);
+
+		await joplin.contentScripts.onMessage('navigationPlugin', async (message: any) => {
+			const mouseNavEnabled = await joplin.settings.value('fullNotebookView.enableMouseNavigation');
+			
+			if (!mouseNavEnabled) return;
+			
+			if (message.type === 'navigateBack') {
+				await navigateBack();
+			} else if (message.type === 'navigateForward') {
+				await navigateForward();
+			}
+		});
+
 		await joplin.settings.registerSection('fullNotebookView', {
 			label: 'Full Notebook View',
 			iconName: 'fas fa-folder-tree',
 		});
 
 		await joplin.settings.registerSettings({
+			'fullNotebookView.navigationHistory': {
+				value: '[]',
+				type: SettingItemType.String,
+				section: 'fullNotebookView',
+				public: false,
+				label: 'Navigation History',
+			},
 			'fullNotebookView.excludedFolderIds': {
 				value: '[]',
 				type: SettingItemType.String,
@@ -282,6 +562,30 @@ joplin.plugins.register({
 				public: true,
 				label: 'Hide note title bar',
 				description: 'Hide the title input field above the note editor.',
+			},
+			'fullNotebookView.enableMouseNavigation': {
+				value: true,
+				type: SettingItemType.Bool,
+				section: 'fullNotebookView',
+				public: true,
+				label: 'Enable mouse side buttons navigation',
+				description: 'Enable navigation using mouse buttons 3 and 4 (back/forward buttons) in the editor.',
+			},
+			'fullNotebookView.shortcutBack': {
+				value: 'Ctrl+Alt+Left',
+				type: SettingItemType.String,
+				section: 'fullNotebookView',
+				public: true,
+				label: 'Navigate Back Shortcut',
+				description: 'Keyboard shortcut for navigating back (e.g., Ctrl+Alt+Left, Ctrl+Alt+H)',
+			},
+			'fullNotebookView.shortcutForward': {
+				value: 'Ctrl+Alt+Right',
+				type: SettingItemType.String,
+				section: 'fullNotebookView',
+				public: true,
+				label: 'Navigate Forward Shortcut',
+				description: 'Keyboard shortcut for navigating forward (e.g., Ctrl+Alt+Right, Ctrl+Alt+L)',
 			},
 		});
 
@@ -567,6 +871,16 @@ joplin.plugins.register({
 						selectedNoteId: selectedNote ? selectedNote.id : null,
 						selectedFolderId: selectedFolder ? selectedFolder.id : null,
 					};
+				}
+
+				case 'triggerNavigateBack': {
+					await navigateBack();
+					return { success: true };
+				}
+
+				case 'triggerNavigateForward': {
+					await navigateForward();
+					return { success: true };
 				}
 
 				case 'expandFolder': {
@@ -1081,6 +1395,7 @@ joplin.plugins.register({
 	await joplin.workspace.onNoteSelectionChange(async () => {
 		await notifyNoteSelection();
 		await notifyTocUpdate();
+		await addToNavigationHistory('note-change');
 	});
 
 	await joplin.workspace.onSyncComplete(async () => {
@@ -1092,7 +1407,6 @@ joplin.plugins.register({
 				time: Date.now(),
 			});
 		} catch (e) {
-			// panel may not be ready yet
 		}
 	});
 
@@ -1103,7 +1417,6 @@ joplin.plugins.register({
 				time: Date.now(),
 			});
 		} catch (e) {
-			// panel may not be ready yet
 		}
 	});
 
@@ -1122,7 +1435,34 @@ joplin.plugins.register({
 			},
 		});
 
-		await joplin.commands.register({
+	await joplin.commands.register({
+		name: 'fullNotebookView.navigateBack',
+		label: 'Navigate Back',
+		iconName: 'fas fa-arrow-left',
+		execute: async () => {
+			await navigateBack();
+		},
+	});
+
+	await joplin.commands.register({
+		name: 'fullNotebookView.navigateForward',
+		label: 'Navigate Forward',
+		iconName: 'fas fa-arrow-right',
+		execute: async () => {
+			await navigateForward();
+		},
+	});
+
+	await joplin.commands.register({
+		name: 'fullNotebookView.toggleLastLocation',
+		label: 'Toggle Last Location',
+		iconName: 'fas fa-exchange-alt',
+		execute: async () => {
+			await toggleLastLocation();
+		},
+	});
+
+	await joplin.commands.register({
 			name: 'fullNotebookView.revealFolder',
 			label: 'Reveal Folder in Full Notebook View',
 			iconName: 'fas fa-folder-tree',
@@ -1163,5 +1503,23 @@ joplin.plugins.register({
 			'fullNotebookView.togglePanel',
 			ToolbarButtonLocation.NoteToolbar
 		);
+
+		// Load navigation history from settings
+		await loadNavigationHistory();
+		cleanOldEntries();
+
+		try {
+			await joplin.views.toolbarButtons.create(
+				'fullNotebookView.backBtn',
+				'fullNotebookView.navigateBack',
+				ToolbarButtonLocation.EditorToolbar
+			);
+			await joplin.views.toolbarButtons.create(
+				'fullNotebookView.forwardBtn',
+				'fullNotebookView.navigateForward',
+				ToolbarButtonLocation.EditorToolbar
+			);
+		} catch (e) {
+		}
 	},
 });
