@@ -1750,10 +1750,11 @@ webviewApi.onMessage(function (message) {
 		case 'noteSelected':
 			state.selectedNoteId = message.noteId;
 			state.selectedFolderId = message.folderId || state.selectedFolderId;
-			if (state.shouldExpandOnNextSelect && message.noteId) {
+			if (message.noteId) {
 				state.shouldExpandOnNextSelect = false;
+				if (state.activeTab !== 'notebooks') switchToTab('notebooks');
 				expandToNote(message.noteId, true);
-			} else if (!state.isSearchMode) {
+			} else {
 				renderTree();
 			}
 			break;
