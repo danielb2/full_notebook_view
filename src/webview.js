@@ -1,5 +1,8 @@
 var state = {
 	tree: [],
+	tags: [],
+	tagChildren: {},
+	expandedTags: {},
 	expandedFolders: {},
 	folderChildren: {},
 	selectedNoteId: null,
@@ -235,6 +238,44 @@ function renderTree() {
 	container.innerHTML = html;
 	attachTreeEvents();
 }
+
+function renderTags() {
+	var container = document.getElementById('fnv-tags-tree');
+	if (!container) return;
+	var html = '';
+	var tags = sortItems(state.tags, state.sortMode);
+	for (var i = 0; i < tags.length; i++) {
+		var tag = tags[i], expanded = !!state.expandedTags[tag.id];
+		html += '<div class="fnv-tree-item fnv-folder" data-id="' + tag.id + '" data-type="tag" style="padding-left:4px">';
+		html += '<span class="fnv-chevron" data-id="' + tag.id + '">' + (expanded ? SVG_CHEVRON_DOWN : SVG_CHEVRON_RIGHT) + '</span><span class="fnv-icon">' + SVG_FOLDER + '</span><span class="fnv-title">' + escapeHtml(tag.title) + '</span></div>';
+		if (expanded && state.tagChildren[tag.id]) {
+			html += '<div class="fnv-children">';
+			for (var j = 0; j < state.tagChildren[tag.id].length; j++) html += renderNoteNode(state.tagChildren[tag.id][j], 1);
+			html += '</div>';
+		}
+	}
+	container.innerHTML = html || '<div class="fnv-empty-state">No tags found</div>';
+	var chevrons = container.querySelectorAll('.fnv-chevron');
+	for (var c = 0; c < chevrons.length; c++) chevrons[c].addEventListener('click', function (e) { e.stopPropagation(); toggleTag(e.currentTarget.getAttribute('data-id')); });
+	var tagItems = container.querySelectorAll('.fnv-folder');
+	for (var t = 0; t < tagItems.length; t++) tagItems[t].addEventListener('click', function (e) {
+		if (e.target.closest('.fnv-chevron')) return;
+		toggleTag(e.currentTarget.getAttribute('data-id'));
+	});
+	var notes = container.querySelectorAll('.fnv-note');
+	for (var n = 0; n < notes.length; n++) notes[n].addEventListener('click', handleItemClick);
+}
+
+async function toggleTag(tagId) {
+	if (state.expandedTags[tagId]) { delete state.expandedTags[tagId]; renderTags(); return; }
+	state.expandedTags[tagId] = true;
+	if (!state.tagChildren[tagId]) {
+		var result = await webviewApi.postMessage({ type: 'expandTag', tagId: tagId });
+		state.tagChildren[tagId] = (result && result.notes) || [];
+	}
+	renderTags();
+}
+
 
 function extractSearchMatches(body, query) {
 	var snippets = [];
@@ -968,6 +1009,16 @@ function handleTabClick(e) {
 	if (tabName === state.activeTab) return;
 	switchTab(tabName);
 }
+async function loadTags() {
+	var result = await webviewApi.postMessage({ type: 'getTags' });
+	if (result && result.tags) {
+		state.tags = result.tags;
+		state.tagChildren = {};
+		state.expandedTags = {};
+		renderTags();
+	}
+}
+
 
 function switchTab(tabName) {
 	state.activeTab = tabName;
@@ -999,6 +1050,8 @@ function switchTab(tabName) {
 			renderToc();
 		}
 	}
+	if (tabName === 'tags') loadTags();
+
 }
 
 var tocDebounce = null;
@@ -1795,6 +1848,7 @@ async function initialize() {
 	var result = await webviewApi.postMessage({ type: 'init' });
 	if (result) {
 		state.tree = result.tree || [];
+		state.tags = result.tags || [];
 		state.selectedNoteId = result.selectedNoteId;
 		state.selectedFolderId = result.selectedFolderId;
 		renderTree();
