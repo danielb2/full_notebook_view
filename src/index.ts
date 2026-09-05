@@ -8,6 +8,11 @@ interface FolderItem {
 	icon: string;
 }
 
+interface TagItem {
+	id: string;
+	title: string;
+}
+
 interface NoteItem {
 	id: string;
 	title: string;
@@ -139,6 +144,46 @@ async function searchNotes(query: string): Promise<NoteItem[]> {
 	}
 	return notes;
 }
+async function fetchAllTags(): Promise<TagItem[]> {
+	const tagsById = new Map<string, TagItem>();
+	let page = 1;
+	while (true) {
+		const result = await joplin.data.get(['tags'], { fields: ['id', 'title'], page, limit: 100 });
+		for (const tag of result.items) tagsById.set(tag.id, tag);
+		if (!result.has_more) break;
+		page++;
+	}
+
+	// Some Joplin versions do not populate the top-level tags collection in the dev profile.
+	if (tagsById.size === 0) {
+		page = 1;
+		while (true) {
+			const result = await joplin.data.get(['notes'], { fields: ['id'], page, limit: 100 });
+			for (const note of result.items) {
+				const noteTags = await joplin.data.get(['notes', note.id, 'tags'], { fields: ['id', 'title'] });
+				for (const tag of noteTags.items) tagsById.set(tag.id, tag);
+			}
+			if (!result.has_more) break;
+			page++;
+		}
+	}
+	return Array.from(tagsById.values()).sort((a, b) => a.title.localeCompare(b.title));
+}
+
+async function fetchNotesInTag(tagId: string): Promise<NoteItem[]> {
+	const notes: NoteItem[] = [];
+	let page = 1;
+	while (true) {
+		const result = await joplin.data.get(['tags', tagId, 'notes'], {
+			fields: ['id', 'title', 'parent_id', 'is_todo', 'todo_completed', 'updated_time'], page, limit: 100,
+		});
+		notes.push(...result.items);
+		if (!result.has_more) break;
+		page++;
+	}
+	return notes;
+}
+
 
 function buildFolderTree(folders: FolderItem[]): TreeNode[] {
 	const map = new Map<string, TreeNode>();
@@ -687,6 +732,10 @@ joplin.plugins.register({
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75z"/></svg>
 						<span>Notebooks</span>
 					</button>
+					<button class="fnv-tab" data-tab="tags">
+						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1 2.5A1.5 1.5 0 0 1 2.5 1h4.879a1.5 1.5 0 0 1 1.06.44l5.121 5.12a1.5 1.5 0 0 1 0 2.122l-4.878 4.878a1.5 1.5 0 0 1-2.122 0l-5.12-5.121A1.5 1.5 0 0 1 1 7.379V2.5zM4.5 5A1.5 1.5 0 1 0 4.5 2a1.5 1.5 0 0 0 0 3z"/></svg>
+						<span>Tags</span>
+					</button>
 					<button class="fnv-tab" data-tab="toc">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M2 2h4v1H2V2zm0 3h4v1H2V5zm0 3h4v1H2V8zm0 3h10v1H2v-1zm6-9h6v1H8V2zm0 3h6v1H8V5zm0 3h6v1H8V8z"/></svg>
 						<span>Outline</span>
@@ -764,6 +813,9 @@ joplin.plugins.register({
 					</div>
 					<div id="fnv-view-toc" class="fnv-view">
 						<div id="fnv-toc"></div>
+					</div>
+					<div id="fnv-view-tags" class="fnv-view">
+						<div id="fnv-tags-tree"></div>
 					</div>
 				</div>
 				<div id="fnv-sync-bar">
@@ -864,13 +916,10 @@ joplin.plugins.register({
 			switch (message.type) {
 				case 'init': {
 					const tree = await refreshFolderTree();
+					const tags = await fetchAllTags();
 					const selectedNote = await joplin.workspace.selectedNote();
 					const selectedFolder = await joplin.workspace.selectedFolder();
-					return {
-						tree: tree,
-						selectedNoteId: selectedNote ? selectedNote.id : null,
-						selectedFolderId: selectedFolder ? selectedFolder.id : null,
-					};
+					return { tree, tags, selectedNoteId: selectedNote ? selectedNote.id : null, selectedFolderId: selectedFolder ? selectedFolder.id : null };
 				}
 
 				case 'triggerNavigateBack': {
@@ -916,6 +965,17 @@ joplin.plugins.register({
 						noteCount: noteCount,
 					};
 				}
+
+				case 'getTags': {
+					return { tags: await fetchAllTags() };
+				}
+
+				case 'expandTag': {
+					const exclusions = await getExcludedIds();
+					const notes = (await fetchNotesInTag(message.tagId)).filter(n => exclusions.noteIds.indexOf(n.id) === -1);
+					return { notes };
+				}
+
 
 				case 'openNote': {
 					await joplin.commands.execute('openNote', message.noteId);

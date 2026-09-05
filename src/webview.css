@@ -243,6 +243,31 @@ html, body {
 	padding: 2px 0;
 }
 
+#fnv-tags-tree {
+	flex: 1 1 0;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: 2px 0;
+}
+
+#fnv-tags-tree::-webkit-scrollbar {
+	width: 8px;
+}
+
+#fnv-tags-tree::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+#fnv-tags-tree::-webkit-scrollbar-thumb {
+	background: rgba(128, 128, 128, 0.35);
+	border-radius: 4px;
+}
+
+#fnv-tags-tree::-webkit-scrollbar-thumb:hover {
+	background: rgba(128, 128, 128, 0.55);
+}
+
 #fnv-tree::-webkit-scrollbar {
 	width: 8px;
 }
