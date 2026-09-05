@@ -730,15 +730,12 @@ joplin.plugins.register({
 					</button>
 					<button class="fnv-tab fnv-tab-active" data-tab="notebooks">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75z"/></svg>
-						<span>Notebooks</span>
 					</button>
 					<button class="fnv-tab" data-tab="tags">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1 2.5A1.5 1.5 0 0 1 2.5 1h4.879a1.5 1.5 0 0 1 1.06.44l5.121 5.12a1.5 1.5 0 0 1 0 2.122l-4.878 4.878a1.5 1.5 0 0 1-2.122 0l-5.12-5.121A1.5 1.5 0 0 1 1 7.379V2.5zM4.5 5A1.5 1.5 0 1 0 4.5 2a1.5 1.5 0 0 0 0 3z"/></svg>
-						<span>Tags</span>
 					</button>
 					<button class="fnv-tab" data-tab="toc">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M2 2h4v1H2V2zm0 3h4v1H2V5zm0 3h4v1H2V8zm0 3h10v1H2v-1zm6-9h6v1H8V2zm0 3h6v1H8V5zm0 3h6v1H8V8z"/></svg>
-						<span>Outline</span>
 					</button>
 				</div>
 				<div id="fnv-views">
