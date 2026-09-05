@@ -2,6 +2,7 @@ var state = {
 	tree: [],
 	expandedFolders: {},
 	folderChildren: {},
+	lastRevealedNoteId: null,
 	selectedNoteId: null,
 	selectedFolderId: null,
 	sortMode: 'title-asc',
@@ -1707,10 +1708,13 @@ webviewApi.onMessage(function (message) {
 		case 'noteSelected':
 			state.selectedNoteId = message.noteId;
 			state.selectedFolderId = message.folderId || state.selectedFolderId;
-			if (state.shouldExpandOnNextSelect && message.noteId) {
+			if (message.noteId) {
+				var shouldScrollToSelection = state.lastRevealedNoteId !== message.noteId || state.shouldExpandOnNextSelect;
+				state.lastRevealedNoteId = message.noteId;
 				state.shouldExpandOnNextSelect = false;
-				expandToNote(message.noteId, true);
-			} else if (!state.isSearchMode) {
+				if (state.activeTab !== 'notebooks') switchToTab('notebooks');
+				expandToNote(message.noteId, shouldScrollToSelection);
+			} else {
 				renderTree();
 			}
 			break;
