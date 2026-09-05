@@ -1074,6 +1074,7 @@ joplin.plugins.register({
 								pathTitles.unshift(folder.title);
 								currentFolderId = folder.parent_id;
 							}
+							const lowerQuery = query.toLowerCase();
 							return {
 								id: n.id,
 								title: n.title,
@@ -1085,6 +1086,7 @@ joplin.plugins.register({
 								path: pathTitles.join(' / '),
 								body: n.body || '',
 								searchQuery: query,
+								searchRank: n.title.toLowerCase().includes(lowerQuery) ? 1 : 2,
 							};
 						});
 				}
@@ -1099,6 +1101,7 @@ joplin.plugins.register({
 							type: 'folder' as const,
 							parent_id: f.parent_id,
 							icon: f.icon,
+							searchRank: 0,
 						}));
 				}
 
