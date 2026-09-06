@@ -10,6 +10,7 @@ var state = {
 	selectedNoteId: null,
 	selectedFolderId: null,
 	sortMode: 'title-asc',
+	allNotesSortMode: 'date-desc',
 	searchQuery: '',
 	isSearchMode: false,
 	activeTab: 'notebooks',
@@ -291,7 +292,7 @@ async function toggleTag(tagId) {
 function renderAllNotes() {
 	var container = document.getElementById('fnv-all-notes-tree');
 	if (!container) return;
-	var notes = sortItems(state.allNotes, state.sortMode);
+	var notes = sortItems(state.allNotes, state.allNotesSortMode);
 	container.innerHTML = notes.length ? notes.map(function (note) { return renderNoteNode(note, 0); }).join('') : '<div class="fnv-empty-state">No notes found</div>';
 	var noteItems = container.querySelectorAll('.fnv-note');
 	for (var i = 0; i < noteItems.length; i++) noteItems[i].addEventListener('click', handleItemClick);
@@ -573,6 +574,7 @@ function setupToolbar() {
 	if (sortSelect) {
 		sortSelect.addEventListener('change', function (e) {
 			state.sortMode = e.target.value;
+			state.allNotesSortMode = e.target.value;
 			var searchSortSelect = document.getElementById('fnv-search-sort');
 			if (searchSortSelect) {
 				searchSortSelect.value = e.target.value;
@@ -582,6 +584,7 @@ function setupToolbar() {
 				delete state.expandedFolders[folderId];
 			});
 			renderTree();
+			if (state.activeTab === 'all-notes') renderAllNotes();
 		});
 	}
 
