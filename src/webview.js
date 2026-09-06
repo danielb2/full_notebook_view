@@ -1,6 +1,7 @@
 var state = {
 	tree: [],
 	tags: [],
+	allNotes: [],
 	tagChildren: {},
 	expandedTags: {},
 	expandedFolders: {},
@@ -286,6 +287,24 @@ async function toggleTag(tagId) {
 	}
 	renderTags();
 }
+
+function renderAllNotes() {
+	var container = document.getElementById('fnv-all-notes-tree');
+	if (!container) return;
+	var notes = sortItems(state.allNotes, state.sortMode);
+	container.innerHTML = notes.length ? notes.map(function (note) { return renderNoteNode(note, 0); }).join('') : '<div class="fnv-empty-state">No notes found</div>';
+	var noteItems = container.querySelectorAll('.fnv-note');
+	for (var i = 0; i < noteItems.length; i++) noteItems[i].addEventListener('click', handleItemClick);
+}
+
+async function loadAllNotes() {
+	if (state.allNotes.length === 0) {
+		var result = await webviewApi.postMessage({ type: 'getAllNotes' });
+		state.allNotes = (result && result.notes) || [];
+	}
+	renderAllNotes();
+}
+
 
 
 function extractSearchMatches(body, query) {
@@ -1062,6 +1081,7 @@ function switchTab(tabName) {
 		}
 	}
 	if (tabName === 'tags') loadTags();
+	if (tabName === 'all-notes') loadAllNotes();
 
 }
 

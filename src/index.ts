@@ -184,6 +184,19 @@ async function fetchNotesInTag(tagId: string): Promise<NoteItem[]> {
 	return notes;
 }
 
+async function fetchAllNotes(): Promise<NoteItem[]> {
+	const notes: NoteItem[] = [];
+	let page = 1;
+	while (true) {
+		const result = await joplin.data.get(['notes'], { fields: ['id', 'title', 'parent_id', 'is_todo', 'todo_completed', 'updated_time'], page, limit: 100 });
+		notes.push(...result.items);
+		if (!result.has_more) break;
+		page++;
+	}
+	return notes;
+}
+
+
 
 function buildFolderTree(folders: FolderItem[]): TreeNode[] {
 	const map = new Map<string, TreeNode>();
@@ -731,6 +744,9 @@ joplin.plugins.register({
 					<button class="fnv-tab fnv-tab-active" data-tab="notebooks" title="Notebooks">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75z"/></svg>
 					</button>
+					<button class="fnv-tab" data-tab="all-notes" title="All Notes">
+						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M2 1.75C2 .78 2.78 0 3.75 0h6.59c.46 0 .91.18 1.24.51l2.91 2.91c.33.33.51.77.51 1.24v9.59A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25V1.75zM3.5 1.75v12.5c0 .14.11.25.25.25h9.5c.14 0 .25-.11.25-.25V6H10.75A1.75 1.75 0 0 1 9 4.25V1.5H3.75a.25.25 0 0 0-.25.25z"/></svg>
+					</button>
 					<button class="fnv-tab" data-tab="tags" title="Tags">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1 2.5A1.5 1.5 0 0 1 2.5 1h4.879a1.5 1.5 0 0 1 1.06.44l5.121 5.12a1.5 1.5 0 0 1 0 2.122l-4.878 4.878a1.5 1.5 0 0 1-2.122 0l-5.12-5.121A1.5 1.5 0 0 1 1 7.379V2.5zM4.5 5A1.5 1.5 0 1 0 4.5 2a1.5 1.5 0 0 0 0 3z"/></svg>
 					</button>
@@ -810,6 +826,9 @@ joplin.plugins.register({
 					</div>
 					<div id="fnv-view-toc" class="fnv-view">
 						<div id="fnv-toc"></div>
+					</div>
+					<div id="fnv-view-all-notes" class="fnv-view">
+						<div id="fnv-all-notes-tree"></div>
 					</div>
 					<div id="fnv-view-tags" class="fnv-view">
 						<div id="fnv-tags-tree"></div>
@@ -918,6 +937,13 @@ joplin.plugins.register({
 					const selectedFolder = await joplin.workspace.selectedFolder();
 					return { tree, tags, selectedNoteId: selectedNote ? selectedNote.id : null, selectedFolderId: selectedFolder ? selectedFolder.id : null };
 				}
+
+				case 'getAllNotes': {
+					const exclusions = await getExcludedIds();
+					const notes = (await fetchAllNotes()).filter(note => exclusions.noteIds.indexOf(note.id) === -1);
+					return { notes };
+				}
+
 
 				case 'triggerNavigateBack': {
 					await navigateBack();
