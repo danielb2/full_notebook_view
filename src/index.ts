@@ -725,16 +725,16 @@ joplin.plugins.register({
 		await joplin.views.panels.setHtml(panel, `
 			<div id="fnv-root">
 				<div id="fnv-tabs">
-					<button class="fnv-tab" data-tab="search">
+					<button class="fnv-tab" data-tab="search" title="Search">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.5 4.5 0 1 0-8.999.001A4.5 4.5 0 0 0 11.5 7Z"/></svg>
 					</button>
-					<button class="fnv-tab fnv-tab-active" data-tab="notebooks">
+					<button class="fnv-tab fnv-tab-active" data-tab="notebooks" title="Notebooks">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75z"/></svg>
 					</button>
-					<button class="fnv-tab" data-tab="tags">
+					<button class="fnv-tab" data-tab="tags" title="Tags">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M1 2.5A1.5 1.5 0 0 1 2.5 1h4.879a1.5 1.5 0 0 1 1.06.44l5.121 5.12a1.5 1.5 0 0 1 0 2.122l-4.878 4.878a1.5 1.5 0 0 1-2.122 0l-5.12-5.121A1.5 1.5 0 0 1 1 7.379V2.5zM4.5 5A1.5 1.5 0 1 0 4.5 2a1.5 1.5 0 0 0 0 3z"/></svg>
 					</button>
-					<button class="fnv-tab" data-tab="toc">
+					<button class="fnv-tab" data-tab="toc" title="Outline">
 						<svg viewBox="0 0 16 16" width="13" height="13"><path fill="currentColor" d="M2 2h4v1H2V2zm0 3h4v1H2V5zm0 3h4v1H2V8zm0 3h10v1H2v-1zm6-9h6v1H8V2zm0 3h6v1H8V5zm0 3h6v1H8V8z"/></svg>
 					</button>
 				</div>
@@ -1487,8 +1487,8 @@ joplin.plugins.register({
 
 		await joplin.commands.register({
 			name: 'fullNotebookView.togglePanel',
-			label: 'Toggle Full Notebook View',
-			iconName: 'fas fa-folder-tree',
+			label: 'Toggle Full Notebook View On/Off',
+			iconName: 'fas fa-folder-open',
 			execute: async () => {
 				const isVisible = await joplin.views.panels.visible(panel);
 				await joplin.views.panels.show(panel, !isVisible);
