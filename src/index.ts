@@ -1414,7 +1414,16 @@ joplin.plugins.register({
 		}
 
 		case 'deleteNote': {
+
+
 			await joplin.data.delete(['notes', message.noteId]);
+			return { success: true };
+		}
+
+		case 'toggleMarkupLanguage': {
+			const note = await joplin.data.get(['notes', message.noteId], { fields: ['markup_language'] });
+			const markupLanguage = Number(note.markup_language) === 2 ? 1 : 2;
+			await joplin.data.put(['notes', message.noteId], null, { markup_language: markupLanguage });
 			return { success: true };
 		}
 

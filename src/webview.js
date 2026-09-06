@@ -1383,6 +1383,9 @@ function createContextMenu(x, y, items) {
 	}
 
 	document.body.appendChild(menu);
+	menu.addEventListener('mouseleave', function () {
+		dismissContextMenu();
+	});
 
 	var rect = menu.getBoundingClientRect();
 	var winW = window.innerWidth;
@@ -1437,6 +1440,7 @@ function showNoteContextMenu(x, y, noteId, el) {
 		{ label: 'New Notebook', action: function () { webviewApi.postMessage({ type: 'newSubNotebook', parentId: state.selectedFolderId }); } },
 		{ separator: true },
 		{ label: 'Rename', action: function () { startInlineRename(el, noteId, 'note', noteTitle); } },
+		{ label: 'Toggle Markup Language', action: function () { webviewApi.postMessage({ type: 'toggleMarkupLanguage', noteId: noteId }); } },
 		{ label: 'Create Copy', action: function () { webviewApi.postMessage({ type: 'duplicateNote', noteId: noteId }); } },
 		{ label: 'Copy Markdown Link', action: function () {
 			webviewApi.postMessage({ type: 'copyMarkdownLink', noteId: noteId, noteTitle: noteTitle }).then(function (result) {
