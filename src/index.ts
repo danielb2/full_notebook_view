@@ -1509,6 +1509,7 @@ joplin.plugins.register({
 	await joplin.workspace.onNoteChange(async () => {
 		await notifyNoteSelection();
 		await notifyTocUpdate();
+		await notifyTreeRefresh();
 	});
 
 		await joplin.commands.register({
